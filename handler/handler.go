@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"strconv"
-	"strings"
+	"fmt"
 )
 
 type User struct {
+	ID     int64
 	Name   string
 	Weight int
 	Height int
@@ -21,7 +21,6 @@ func CreateUser() User {
 }
 
 func CreateMessageAboutNameHeightWeigth(u *User) string {
-	res := []string{"Пользователь", u.Name, "весит", strconv.Itoa(u.Weight), "кг и его рост", strconv.Itoa(u.Height), "см"}
-	msg := strings.Join(res, " ")
+	msg := fmt.Sprintf("Пользователь: %s \nВес %d кг \nРост %d см", u.Name, u.Weight, u.Height)
 	return msg
 }

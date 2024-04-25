@@ -7,6 +7,13 @@ import (
 	"tgbotfitnes/handler"
 )
 
+var keyboard = tgbotapi.NewReplyKeyboard(
+	tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton("Мои данные"),
+		tgbotapi.NewKeyboardButton("Изменить данные"),
+	),
+)
+
 func main() {
 	bot, err := tgbotapi.NewBotAPI("6775953510:AAFvm_iNNVDm-38eE2iaQdlkXyWydPUfgbY")
 	if err != nil {
@@ -21,67 +28,88 @@ func main() {
 	u.Timeout = 60
 
 	updates := bot.GetUpdatesChan(u)
-	user := handler.CreateUser()
+	if err != nil {
+		log.Panic(err)
+	}
+
+	var users map[int64]handler.User = make(map[int64]handler.User)
 
 	for update := range updates {
 		if update.Message == nil {
 			continue
 		}
 
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		if update.Message.IsCommand() && update.Message.Command() == "start" {
+			if _, exists := users[update.Message.From.ID]; !exists {
+				var newUser handler.User
+				newUser.ID = update.Message.From.ID
 
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваше имя:")
-		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
-			tgbotapi.NewKeyboardButtonRow(
-				tgbotapi.NewKeyboardButton("Отмена"),
-			),
-		)
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваше имя:")
 
-		bot.Send(msg)
+				bot.Send(msg)
 
-		update = <-updates
+				update = <-updates
 
-		if update.Message.Text == "Отмена" {
-			continue
+				newUser.Name = update.Message.Text
+
+				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш вес:")
+				bot.Send(msg)
+
+				update = <-updates
+
+				newUser.Weight, _ = strconv.Atoi(update.Message.Text)
+
+				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш рост:")
+				bot.Send(msg)
+
+				update = <-updates
+				if update.Message.Text == "Отмена" {
+					continue
+				}
+				newUser.Height, _ = strconv.Atoi(update.Message.Text)
+
+				users[update.Message.From.ID] = newUser
+			}
+
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите кнопку:")
+			msg.ReplyMarkup = keyboard
+			bot.Send(msg)
 		}
 
-		user.Name = update.Message.Text
+		switch update.Message.Text {
+		case "Мои данные":
+			currentUser := users[update.Message.From.ID]
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, handler.CreateMessageAboutNameHeightWeigth(&currentUser))
+			bot.Send(msg)
+		case "Изменить данные":
+			currentUser := users[update.Message.From.ID]
 
-		msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш вес:")
-		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
-			tgbotapi.NewKeyboardButtonRow(
-				tgbotapi.NewKeyboardButton("Отмена"),
-			),
-		)
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваше имя:")
+			bot.Send(msg)
 
-		bot.Send(msg)
+			update = <-updates
 
-		update = <-updates
+			currentUser.Name = update.Message.Text
 
-		if update.Message.Text == "Отмена" {
-			continue
+			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш вес:")
+			bot.Send(msg)
+
+			update = <-updates
+
+			currentUser.Weight, _ = strconv.Atoi(update.Message.Text)
+
+			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш рост:")
+			bot.Send(msg)
+
+			update = <-updates
+
+			currentUser.Height, _ = strconv.Atoi(update.Message.Text)
+
+			users[update.Message.From.ID] = currentUser
+
+			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Ваши данные успешно обновлены.")
+			msg.ReplyMarkup = keyboard
+			bot.Send(msg)
 		}
-
-		user.Weight, _ = strconv.Atoi(update.Message.Text)
-
-		msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш рост:")
-		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
-			tgbotapi.NewKeyboardButtonRow(
-				tgbotapi.NewKeyboardButton("Отмена"),
-			),
-		)
-
-		bot.Send(msg)
-
-		update = <-updates
-
-		if update.Message.Text == "Отмена" {
-			continue
-		}
-
-		user.Height, _ = strconv.Atoi(update.Message.Text)
-
-		msg = tgbotapi.NewMessage(update.Message.Chat.ID, handler.CreateMessageAboutNameHeightWeigth(&user))
-		bot.Send(msg)
 	}
 }
