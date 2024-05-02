@@ -4,6 +4,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"strconv"
+	"tgbotfitnes/db"
 	"tgbotfitnes/handler"
 )
 
@@ -19,6 +20,18 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+	db := database.DbConnectin()
+	defer db.Close()
+
+	if err := database.InsertUser(db, &helper.User{
+		ID:     2,
+		Name:   "Dasha",
+		Weight: 15,
+		Height: 170,
+	}); err != nil {
+		log.Fatal(err)
+	}
+	database.PrintTable(db)
 
 	bot.Debug = true
 
@@ -32,7 +45,7 @@ func main() {
 		log.Panic(err)
 	}
 
-	var users map[int64]handler.User = make(map[int64]handler.User)
+	var users = make(map[int64]helper.User)
 
 	for update := range updates {
 		if update.Message == nil {
@@ -41,7 +54,7 @@ func main() {
 
 		if update.Message.IsCommand() && update.Message.Command() == "start" {
 			if _, exists := users[update.Message.From.ID]; !exists {
-				var newUser handler.User
+				var newUser helper.User
 				newUser.ID = update.Message.From.ID
 
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваше имя:")
@@ -79,7 +92,7 @@ func main() {
 		switch update.Message.Text {
 		case "Мои данные":
 			currentUser := users[update.Message.From.ID]
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, handler.CreateMessageAboutNameHeightWeigth(&currentUser))
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, helper.CreateMessageAboutNameHeightWeigth(&currentUser))
 			bot.Send(msg)
 		case "Изменить данные":
 			currentUser := users[update.Message.From.ID]
