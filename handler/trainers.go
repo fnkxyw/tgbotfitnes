@@ -87,6 +87,12 @@ var (
 			tgbotapi.NewKeyboardButton("Степпер"),
 		),
 	)
+	keyboardaccept = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Да"),
+			tgbotapi.NewKeyboardButton("Нет"),
+		),
+	)
 	counter int = 1
 )
 
@@ -122,9 +128,34 @@ func CreateTrainHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, keyboard1,
 			msg.ReplyMarkup = keyboard1
 			bot.Send(msg)
 		case "Назад":
-			msg.ReplyMarkup = keyboard2
+			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Желаете сохранить ваш тренировочный план?")
+			msg.ReplyMarkup = keyboardaccept
 			bot.Send(msg)
-			return
+			update = <-updates
+			switch update.Message.Text {
+			case "Да":
+				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите название для вашей тренировки")
+				bot.Send(msg)
+				update = <-updates
+				err := AddName(db, update.Message.Text, counter)
+				if err != nil {
+					log.Println(err)
+				}
+				err = AddIdInUsers(db, counter, update)
+				if err != nil {
+					log.Println(err)
+				}
+				counter++
+				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите кнопку:")
+				msg.ReplyMarkup = keyboard2
+				bot.Send(msg)
+				return
+			case "Нет":
+				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите кнопку:")
+				msg.ReplyMarkup = keyboard2
+				bot.Send(msg)
+				return
+			}
 		case "Жим штанги лежа":
 			handleExercise(bot, update, db, "Жим штанги лежа", counter, updates)
 		case "Жим гантелей лежа":
@@ -195,6 +226,26 @@ func AddTrainers(db *sql.DB, name string, counts int, id int) error {
 	return nil
 }
 
+func AddName(db *sql.DB, name string, id int) error {
+	_, err := db.Exec("UPDATE public.trainers SET name = $1 WHERE id =$2", name, id)
+	if err != nil {
+		log.Println("Error adding name to database:", err)
+		return err
+	}
+	log.Println("Name added successfully")
+	return nil
+}
+
+func AddIdInUsers(db *sql.DB, id int, update tgbotapi.Update) error {
+	_, err := db.Exec("UPDATE public.users SET trainersid = array_append(trainersid, $1) WHERE id=$2", id, update.Message.Chat.ID)
+	if err != nil {
+		log.Println("Error adding id in users table:", err)
+		return err
+	}
+	log.Println("Id in users added successfully")
+	return nil
+}
+
 func AddId(db *sql.DB, id int) error {
 	_, err := db.Exec("INSERT INTO trainers (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", id)
 	return err
@@ -212,7 +263,7 @@ func handleExercise(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB, ex
 	}
 	err = AddTrainers(db, exerciseName, value, counter)
 	if err == nil {
-		SendTrainersToUser(bot, update, db)
+		SendTrainersToUser(bot, update, db, counter)
 	} else {
 		log.Println("Add error")
 	}
@@ -230,14 +281,24 @@ func handleTimeExercise(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB
 	}
 	err = AddTrainers(db, exerciseName, duration, counter)
 	if err == nil {
-		SendTrainersToUser(bot, update, db)
+		SendTrainersToUser(bot, update, db, counter)
 	} else {
 		log.Println("Add error")
 	}
 }
 
-func SendTrainersToUser(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB) error {
-	rows, err := db.Query("SELECT trainer, count FROM public.trainers")
+func DeleteFromTrainers(db *sql.DB, id int) error {
+	_, err := db.Exec("DELETE FROM public.trainers WHERE id = $1", id)
+	if err != nil {
+		log.Println("Error adding id in users table:", err)
+		return err
+	}
+	log.Println("Id in users added successfully")
+	return nil
+}
+
+func SendTrainersToUser(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB, userID int) error {
+	rows, err := db.Query("SELECT trainer, count FROM public.trainers WHERE id = $1", userID)
 	if err != nil {
 		log.Println("Error querying trainers:", err)
 		return err
@@ -252,23 +313,19 @@ func SendTrainersToUser(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB
 			continue
 		}
 
-		// Разбиваем строку на отдельные элементы
 		trainersArr := strings.Split(trainers[1:len(trainers)-1], ",") // Убираем квадратные скобки
 		countsArr := strings.Split(counts[1:len(counts)-1], ",")
 
-		// Проверяем, что количество элементов в массивах совпадает
 		if len(trainersArr) != len(countsArr) {
 			log.Println("Mismatch between trainers and counts arrays")
 			continue
 		}
 
-		// Формируем строку для вывода
 		var output strings.Builder
 		for i := range trainersArr {
 			output.WriteString(fmt.Sprintf("%s: %s\n", trainersArr[i], countsArr[i]))
 		}
 
-		// Отправляем строку пользователю через бота
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, output.String())
 		if _, err := bot.Send(msg); err != nil {
 			log.Println("Error sending message:", err)
