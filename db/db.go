@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	_ "github.com/lib/pq"
 	"log"
@@ -41,7 +42,7 @@ func InsertUser(db *sql.DB, newUser *helper.User) error {
 }
 
 // Метод для обновления существующего пользователя в базе данных
-func updateUser(db *sql.DB, currentUser *helper.User) error {
+func UpdateUser(db *sql.DB, currentUser *helper.User) error {
 	_, err := db.Exec("UPDATE users SET name = $1, weight = $2, height = $3 WHERE id = $4", currentUser.Name, currentUser.Weight, currentUser.Height, currentUser.ID)
 	return err
 }
@@ -63,4 +64,25 @@ func PrintTable(db *sql.DB) {
 	if err := rows.Err(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func InfoAboutUser(db *sql.DB, id int64) (helper.User, error) {
+	row, err := db.Query("SELECT id, name, weight, height FROM public.users WHERE id = $1", id)
+	if err != nil {
+		log.Println(err)
+		return helper.User{}, err
+	}
+	defer row.Close()
+
+	var user helper.User
+	if row.Next() {
+		if err := row.Scan(&user.ID, &user.Name, &user.Weight, &user.Height); err != nil {
+			log.Println(err)
+			return helper.User{}, err
+		}
+	} else {
+		return helper.User{}, errors.New("User not found")
+	}
+
+	return user, nil
 }

@@ -1,18 +1,44 @@
 package main
 
 import (
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"strconv"
+	"sync"
 	"tgbotfitnes/db"
 	"tgbotfitnes/handler"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var keyboard = tgbotapi.NewReplyKeyboard(
-	tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton("Мои данные"),
-		tgbotapi.NewKeyboardButton("Изменить данные"),
-	),
+var (
+	keyboard = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Мои данные"),
+			tgbotapi.NewKeyboardButton("Изменить данные"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Создать план на тренировку"),
+			tgbotapi.NewKeyboardButton("Мои тренировки"),
+		),
+	)
+
+	keyboard2 = tgbotapi.NewReplyKeyboard(
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Упражнения на грудные мышцы"),
+			tgbotapi.NewKeyboardButton("Упражнения на спину"),
+			tgbotapi.NewKeyboardButton("Упражнения на ноги"),
+			tgbotapi.NewKeyboardButton("Упражнения на плечи"),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("Упражнения на бицепс и трицепс"),
+			tgbotapi.NewKeyboardButton("Упражнения на пресс"),
+			tgbotapi.NewKeyboardButton("Упражнения на кардио"),
+			tgbotapi.NewKeyboardButton("Назад"),
+		),
+	)
+	previouskeyboard tgbotapi.ReplyKeyboardMarkup
+	newUserMu        sync.Mutex // Мьютекс для newUser
+	currentUserMu    sync.Mutex // Мьютекс для currentUser
 )
 
 func main() {
@@ -22,16 +48,6 @@ func main() {
 	}
 	db := database.DbConnectin()
 	defer db.Close()
-
-	if err := database.InsertUser(db, &helper.User{
-		ID:     2,
-		Name:   "Dasha",
-		Weight: 15,
-		Height: 170,
-	}); err != nil {
-		log.Fatal(err)
-	}
-	database.PrintTable(db)
 
 	bot.Debug = true
 
@@ -44,59 +60,71 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-
-	var users = make(map[int64]helper.User)
-
+	var newUser helper.User
 	for update := range updates {
 		if update.Message == nil {
 			continue
 		}
 
 		if update.Message.IsCommand() && update.Message.Command() == "start" {
-			if _, exists := users[update.Message.From.ID]; !exists {
-				var newUser helper.User
-				newUser.ID = update.Message.From.ID
 
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваше имя:")
+			newUserMu.Lock() // Блокировка доступа к newUser
+			newUser.ID = update.Message.From.ID
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваше имя:")
+			bot.Send(msg)
 
-				bot.Send(msg)
+			update = <-updates
 
-				update = <-updates
+			newUser.Name = update.Message.Text
 
-				newUser.Name = update.Message.Text
+			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш вес:")
+			bot.Send(msg)
 
-				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш вес:")
-				bot.Send(msg)
+			update = <-updates
 
-				update = <-updates
+			newUser.Weight, _ = strconv.Atoi(update.Message.Text)
 
-				newUser.Weight, _ = strconv.Atoi(update.Message.Text)
+			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш рост:")
+			bot.Send(msg)
 
-				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваш рост:")
-				bot.Send(msg)
-
-				update = <-updates
-				if update.Message.Text == "Отмена" {
-					continue
-				}
-				newUser.Height, _ = strconv.Atoi(update.Message.Text)
-
-				users[update.Message.From.ID] = newUser
+			update = <-updates
+			if update.Message.Text == "Отмена" {
+				newUserMu.Unlock() // Разблокировка доступа к newUser
+				continue
 			}
+			newUser.Height, _ = strconv.Atoi(update.Message.Text)
 
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите кнопку:")
+			err := database.InsertUser(db, &newUser)
+			if err != nil {
+				log.Fatal(err)
+			}
+			newUserMu.Unlock() // Разблокировка доступа к newUser
+
+			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите кнопку:")
 			msg.ReplyMarkup = keyboard
 			bot.Send(msg)
 		}
 
 		switch update.Message.Text {
 		case "Мои данные":
-			currentUser := users[update.Message.From.ID]
+			currentUserMu.Lock() // Блокировка доступа к currentUser
+			currentUser, err := database.InfoAboutUser(db, update.Message.From.ID)
+			currentUserMu.Unlock() // Разблокировка доступа к currentUser
+			if err != nil {
+				log.Println(err)
+				break
+			}
+			database.PrintTable(db)
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, helper.CreateMessageAboutNameHeightWeigth(&currentUser))
 			bot.Send(msg)
 		case "Изменить данные":
-			currentUser := users[update.Message.From.ID]
-
+			currentUserMu.Lock() // Блокировка доступа к currentUser
+			currentUser, err := database.InfoAboutUser(db, update.Message.From.ID)
+			if err != nil {
+				currentUserMu.Unlock() // Разблокировка доступа к currentUser
+				log.Println(err)
+				break
+			}
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Введите ваше имя:")
 			bot.Send(msg)
 
@@ -118,9 +146,22 @@ func main() {
 
 			currentUser.Height, _ = strconv.Atoi(update.Message.Text)
 
-			users[update.Message.From.ID] = currentUser
+			err = database.UpdateUser(db, &currentUser)
+			if err != nil {
+				log.Fatal(err)
+			}
+			currentUserMu.Unlock() // Разблокировка доступа к currentUser
 
 			msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Ваши данные успешно обновлены.")
+			msg.ReplyMarkup = keyboard
+			bot.Send(msg)
+		case "Создать план на тренировку":
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите группу тренировок: ")
+			msg.ReplyMarkup = keyboard2
+			bot.Send(msg)
+			helper.CreateTrainHandler(bot, update, keyboard2, keyboard, updates, db)
+		case "Назад":
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите опцию: ")
 			msg.ReplyMarkup = keyboard
 			bot.Send(msg)
 		}
