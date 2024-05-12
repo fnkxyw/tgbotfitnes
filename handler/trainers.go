@@ -151,6 +151,7 @@ func CreateTrainHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, keyboard1,
 				bot.Send(msg)
 				return
 			case "Нет":
+				DeleteFromTrainers(db, counter)
 				msg = tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите кнопку:")
 				msg.ReplyMarkup = keyboard2
 				bot.Send(msg)
@@ -160,7 +161,7 @@ func CreateTrainHandler(bot *tgbotapi.BotAPI, update tgbotapi.Update, keyboard1,
 			handleExercise(bot, update, db, "Жим штанги лежа", counter, updates)
 		case "Жим гантелей лежа":
 			handleExercise(bot, update, db, "Жим гантелей лежа", counter, updates)
-		case "Сведение рук в тренажере Баттерфляй.":
+		case "Сведение рук в тренажере Баттерфляй":
 			handleExercise(bot, update, db, "Сведение рук в тренажере Баттерфляй.", counter, updates)
 		case "Пуловер":
 			handleExercise(bot, update, db, "Пуловер", counter, updates)
@@ -335,6 +336,64 @@ func SendTrainersToUser(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB
 
 	if err := rows.Err(); err != nil {
 		log.Println("Error iterating over trainers rows:", err)
+		return err
+	}
+
+	return nil
+}
+
+func ShowTrainers(db *sql.DB, bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
+	rows, err := db.Query("SELECT trainers.name, trainers.trainer, trainers.count FROM public.users INNER JOIN public.trainers ON trainers.id = ANY(public.users.trainersid) WHERE users.id = $1", update.Message.Chat.ID)
+	if err != nil {
+		log.Println("db query error:", err)
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name string
+		var trainer []byte // Используем []byte для сканирования массива текстов
+		var count []byte   // Используем []byte для сканирования массива чисел
+
+		if err := rows.Scan(&name, &trainer, &count); err != nil {
+			log.Println("Scan row error:", err)
+			continue
+		}
+
+		// Преобразуем []byte в []string
+		trainerArr := strings.Split(string(trainer[1:len(trainer)-1]), ",")
+
+		// Преобразуем []byte в []int
+		countArr := make([]int, 0)
+		strCountArr := strings.Split(string(count[1:len(count)-1]), ",")
+		for _, strCount := range strCountArr {
+			num, err := strconv.Atoi(strCount)
+			if err != nil {
+				log.Println("Error converting count to int:", err)
+				continue
+			}
+			countArr = append(countArr, num)
+		}
+
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, name)
+		bot.Send(msg)
+		var message string
+		for i := 0; i < len(trainerArr); i++ {
+			message += fmt.Sprintf("%s-%d\n", trainerArr[i], countArr[i])
+		}
+
+		if bot != nil {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, message)
+			if _, err := bot.Send(msg); err != nil {
+				log.Println("Error sending message:", err)
+			}
+		} else {
+			log.Println("Bot is nil, cannot send message")
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Println("Error iterating over rows:", err)
 		return err
 	}
 

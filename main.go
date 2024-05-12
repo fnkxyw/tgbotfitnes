@@ -160,6 +160,9 @@ func main() {
 			msg.ReplyMarkup = keyboard2
 			bot.Send(msg)
 			helper.CreateTrainHandler(bot, update, keyboard2, keyboard, updates, db)
+		case "Мои тренировки":
+			helper.MyTrain(db, bot, update, updates)
+			fallthrough
 		case "Назад":
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите опцию: ")
 			msg.ReplyMarkup = keyboard
