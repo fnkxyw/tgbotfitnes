@@ -115,7 +115,8 @@ func main() {
 				break
 			}
 			database.PrintTable(db)
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, helper.CreateMessageAboutNameHeightWeigth(&currentUser))
+			calorie, quantity := database.SummaryInfo(db, currentUser.ID)
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, helper.CreateMessageAboutNameHeightWeigth((&currentUser), calorie, quantity))
 			bot.Send(msg)
 		case "Изменить данные":
 			currentUserMu.Lock() // Блокировка доступа к currentUser

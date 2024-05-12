@@ -38,6 +38,7 @@ func DbConnectin() *sql.DB {
 
 func InsertUser(db *sql.DB, newUser *helper.User) error {
 	_, err := db.Exec("INSERT INTO public.users (id, name, weight, height) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING", newUser.ID, newUser.Name, newUser.Weight, newUser.Height)
+	_, err = db.Exec("INSERT INTO public.summary (id,quantity, calorie) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING", newUser.ID, 0, 0)
 	return err
 }
 
@@ -85,4 +86,26 @@ func InfoAboutUser(db *sql.DB, id int64) (helper.User, error) {
 	}
 
 	return user, nil
+}
+
+func SummaryInfo(db *sql.DB, id int64) (float64, int) {
+	row, err := db.Query("SELECT calorie, quantity FROM public.summary WHERE id = $1", id)
+	if err != nil {
+		log.Println(err)
+		return 0, 0
+	}
+	defer row.Close()
+
+	var colorie float64
+	var quantity int
+	if row.Next() {
+		if err := row.Scan(&colorie, &quantity); err != nil {
+			log.Println(err)
+			return colorie, quantity
+		}
+	} else {
+		return 0, 0
+	}
+	log.Println("SummaryInfo corrected")
+	return colorie, quantity
 }

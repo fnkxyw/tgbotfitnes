@@ -20,7 +20,7 @@ func CreateUser() User {
 	return user
 }
 
-func CreateMessageAboutNameHeightWeigth(u *User) string {
-	msg := fmt.Sprintf("Пользователь: %s \nВес %d кг \nРост %d см", u.Name, u.Weight, u.Height)
+func CreateMessageAboutNameHeightWeigth(u *User, calorie float64, quantity int) string {
+	msg := fmt.Sprintf("Пользователь: %s \nВес %d кг \nРост %d см\nСуммарно потрачено колорий %0.2f\nСуммарное количество тренировок %d", u.Name, u.Weight, u.Height, calorie, quantity)
 	return msg
 }

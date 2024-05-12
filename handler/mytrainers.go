@@ -54,6 +54,10 @@ func MyTrain(db *sql.DB, bot *tgbotapi.BotAPI, update tgbotapi.Update, updates t
 		calorieAsString := fmt.Sprintf("%.2f", calorie) // Преобразование float64 в строку с двумя знаками после запятой
 		msg = tgbotapi.NewMessage(update.Message.Chat.ID, "За эту тренировку вы потратите: "+calorieAsString)
 		bot.Send(msg)
+		err = UpdateSummaryTable(db, calorie, update)
+		if err != nil {
+			log.Println(err)
+		}
 
 	case "Назад":
 		return
@@ -140,6 +144,24 @@ func ParsePlanAndCalculate(plan *Plan, weight int) float64 {
 	}
 
 	return CalorieSum
+}
+
+func UpdateSummaryTable(db *sql.DB, sum float64, update tgbotapi.Update) error {
+	// Обновляем столбец `calorie`
+	_, err := db.Exec("UPDATE public.summary SET calorie = calorie + $1 WHERE id = $2", sum, update.Message.Chat.ID)
+	if err != nil {
+		log.Println("Update summary error:", err)
+		return err
+	}
+
+	// Увеличиваем значение столбца `quantity` на 1
+	_, err = db.Exec("UPDATE public.summary SET quantity = quantity + 1 WHERE id = $1", update.Message.Chat.ID)
+	if err != nil {
+		log.Println("Update summary2 error:", err)
+		return err
+	}
+	log.Println("UpdateSummaryTable corrceted")
+	return nil
 }
 
 // жим штанги лежа
